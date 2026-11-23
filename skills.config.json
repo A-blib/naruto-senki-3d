@@ -1,0 +1,35 @@
+{
+  "@headroom": {
+    "id": "@headroom",
+    "name": "Headroom",
+    "desc": "Burst chakra dari kepala, memberi buff speed & damage sementara.",
+    "damage": 40,
+    "cooldown": 8,
+    "chakraCost": 25,
+    "duration": 4,
+    "color": "#00ffff",
+    "effect": "buff"
+  },
+  "@caveman": {
+    "id": "@caveman",
+    "name": "Caveman",
+    "desc": "Serangan brutal area, high damage & knockback.",
+    "damage": 80,
+    "cooldown": 10,
+    "chakraCost": 30,
+    "radius": 4,
+    "color": "#8b4513",
+    "effect": "aoe"
+  },
+  "@ponytail": {
+    "id": "@ponytail",
+    "name": "Ponytail",
+    "desc": "Proyektil cepat beruntun yang mengejar target.",
+    "damage": 25,
+    "cooldown": 6,
+    "chakraCost": 20,
+    "count": 5,
+    "color": "#ff69b4",
+    "effect": "projectile"
+  }
+}
