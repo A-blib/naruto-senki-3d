@@ -682,7 +682,7 @@ class Fighter {
     this.blocking = !!input.mouseRight && this.grounded && !this.state.includes('attack');
     if(this.blocking){ this.state='block'; this.vel.x*=0.4; this.vel.z*=0.4; }
     if(input.jumpPressed && this.grounded){
-      this.vel.y = 8.5; this.grounded=false; this.airborne=true; this.state='jump'; this.stateT=0.25;
+      this.vel.y = 7.0; this.grounded=false; this.airborne=true; this.state='jump'; this.stateT=0.2;
       input.jumpPressed=false; SFX.jump();
     }
     if(input.dashPressed){ this.doDash(target); input.dashPressed=false; }
@@ -692,7 +692,7 @@ class Fighter {
     if(input.ultPressed){ this.doUltimate(target); input.ultPressed=false; }
     if(input.specialPressed){ this.doSpecial(input.specialKey,target); input.specialPressed=false; }
   }
-  applyGravity(dt){ if(!this.grounded) this.vel.y -= 22*dt; }
+  applyGravity(dt){ if(!this.grounded) this.vel.y -= 34*dt; }
   clampArena(){
     const L=38;
     this.pos.x = clamp(this.pos.x,-L,L);
@@ -740,8 +740,8 @@ class Fighter {
     spawnEffect('slash', this.pos.clone(), this.facing, 0xffffff);
     SFX.hit();
     if(this.airborne){
-      // air combo
-      this.vel.y=2;
+      // air combo (keep low)
+      this.vel.y=0.8;
     }
   }
   doCounter(target){
@@ -752,7 +752,7 @@ class Fighter {
     const dmg=120+(this.buff==='damage'?40:0);
     target.takeDamage(dmg,this,'heavy');
     target.vel.x=(target.pos.x<this.pos.x?-1:1)*8;
-    target.vel.y=4;
+    target.vel.y=2.2;
     target.hitStun=0.5;
     spawnEffect('slash', this.pos.clone(), this.facing, 0xffd27f);
     spawnEffect('hit', target.pos.clone().add(new THREE.Vector3(0,1.2,0)),0,0xffd27f);
@@ -805,9 +805,16 @@ class Fighter {
     if(this.buff==='damage') final *= 0.9;
     this.hp -= final;
     this.hitStun = this.blocking?0.05:0.22;
-    const kb = type==='heavy'?8:5;
+    const kb = type==='heavy'?7:4;
     this.vel.x = (this.pos.x < attacker.pos.x ? -1 : 1)*kb;
-    this.vel.y = type==='heavy'?3.5:1.8;
+    // keep grounded hits on the ground; only launch if already airborne
+    if(this.airborne){
+      this.vel.y = type==='heavy'?2.5:1.2;
+    } else {
+      this.vel.y = type==='heavy'?1.2:0.4;
+      // snap back to ground quickly
+      this.grounded = false;
+    }
     this.grounded=false;
     spawnEffect('hit', this.pos.clone().add(new THREE.Vector3(0,1.3,0)),0,0xff4444);
     spawnDamageNumber(this.pos.clone().add(new THREE.Vector3(0,2.2,0)), Math.round(final), type==='heavy');
@@ -968,7 +975,7 @@ function executeSkill(fighter,s,target,isUlt=false){
     case 'dash':
       {
         const dir = fighter.facing;
-        fighter.vel.x = dir*s.range*1.8; fighter.vel.y=1.2;
+        fighter.vel.x = dir*s.range*1.8; fighter.vel.y=0.4;
         fighter.invuln=0.35; fighter.state='dash'; fighter.stateT=0.4;
         if(t && t.alive){ const d=fighter.pos.distanceTo(t.pos); if(d < s.range+2){ applyDamage(fighter,t,s.dmg,'heavy'); } }
         spawnEffect('dash', fighter.pos.clone(), dir, fighter.data.accent);
@@ -1201,7 +1208,7 @@ function aiUpdate(enemy, player, dt){
     }
   } else { enemy.vel.x *= 0.85; enemy.vel.z*=0.85; }
   // jump to chase
-  if(!enemy.airborne && Math.random()<0.004 && d>4){ enemy.vel.y=8; enemy.airborne=true; enemy.grounded=false; enemy.state='jump'; }
+  if(!enemy.airborne && Math.random()<0.003 && d>5){ enemy.vel.y=6.5; enemy.airborne=true; enemy.grounded=false; enemy.state='jump'; }
   // attack when in range
   if(d < 2.9 && enemy.attackCd<=0 && Math.random()<0.05){
     enemy.doAttack(player);
