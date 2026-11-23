@@ -408,8 +408,11 @@ sun.shadow.camera.near=1; sun.shadow.camera.far=80;
 sun.shadow.camera.left=-30; sun.shadow.camera.right=30;
 sun.shadow.camera.top=30; sun.shadow.camera.bottom=-30;
 scene.add(sun);
-const hemi = new THREE.HemisphereLight(0x87ceeb,0x3a7d44,0.3);
+const hemi = new THREE.HemisphereLight(0x87ceeb,0x3a7d44,0.35);
 scene.add(hemi);
+const rim = new THREE.DirectionalLight(0x88ccff,0.6);
+rim.position.set(-15,10,-15);
+scene.add(rim);
 const clock = new THREE.Clock();
 
 // ============================================================
@@ -426,75 +429,200 @@ function saveHighScore(){localStorage.setItem('n3d_hs',G.highScore);}
 function buildCharacter(data, tint){
   const g = new THREE.Group();
   const color = tint||data.color;
-  const mat = (c,shiny=false,rough=0.6)=>new THREE.MeshStandardMaterial({color:c,roughness:rough,metalness:shiny?0.35:0.05});
-  const skin = mat(0xffdbac, false, 0.7);
-  // torso (jacket)
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42,0.85,6,12), mat(color));
-  torso.position.y = 1.3; torso.castShadow=true;
-  // chest accent
-  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.35,0.15), mat(data.secondary||0x222));
-  chest.position.set(0,1.45,0.38);
+  const mat = (c,shiny=false,rough=0.55,metal=0.05)=>new THREE.MeshStandardMaterial({color:c,roughness:rough,metalness:metal});
+  const skin = mat(0xffdbac,false,0.6,0.0);
+  const cloth = mat(color,false,0.7,0.0);
+  const cloth2 = mat(data.secondary||0x222,false,0.75,0.0);
+  const bootMat = mat(0x1a1a1a,false,0.5,0.15);
+  const metalMat = mat(0x9aa0a6,true,0.25,0.6);
+  const hairMat = mat(data.color,false,0.5,0.08);
+
+  // pelvis
+  const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.34,0.18,0.22), cloth2);
+  pelvis.position.set(0,0.95,0); pelvis.castShadow=true;
+
+  // torso
+  const torsoLower = new THREE.Mesh(new THREE.CapsuleGeometry(0.22,0.35,8,12), cloth2);
+  torsoLower.position.set(0,1.22,0); torsoLower.castShadow=true;
+  const torsoUpper = new THREE.Mesh(new THREE.CapsuleGeometry(0.26,0.4,8,12), cloth);
+  torsoUpper.position.set(0,1.62,0); torsoUpper.castShadow=true;
+  const jacket = new THREE.Mesh(new THREE.BoxGeometry(0.52,0.72,0.18), cloth);
+  jacket.position.set(0,1.45,0.12); jacket.castShadow=true;
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(0.18,0.05,8,16,Math.PI), cloth2);
+  collar.position.set(0,1.88,0.05); collar.rotation.x=Math.PI; collar.castShadow=true;
+  const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.27,0.27,0.08,16), mat(0x1a1a1a,false,0.5,0.2));
+  belt.rotation.x=Math.PI/2; belt.position.set(0,1.0,0.02);
+  const buckle = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.08,0.04), metalMat);
+  buckle.position.set(0,1.0,0.26);
+
+  // neck
+  const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.13,0.18,12), skin);
+  neck.position.set(0,1.92,0); neck.castShadow=true;
+
   // head
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.36,20,20), skin);
-  head.position.y = 2.35; head.castShadow=true;
-  // hair (spiky-ish via cone)
-  const hair = new THREE.Mesh(new THREE.ConeGeometry(0.42,0.5,8), mat(data.color,true,0.4));
-  hair.position.y = 2.72; hair.castShadow=true;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.27,32,32), skin);
+  head.position.set(0,2.22,0); head.scale.set(1.0,1.08,0.95); head.castShadow=true;
+
+  // face features
+  function makeEye(x){
+    const grp = new THREE.Group();
+    const sclera = new THREE.Mesh(new THREE.SphereGeometry(0.055,16,16), mat(0xffffff,false,0.3));
+    sclera.scale.set(1.1,0.9,0.6);
+    const iris = new THREE.Mesh(new THREE.CircleGeometry(0.032,16), mat(data.accent,true,0.3,0.2));
+    iris.position.z = 0.05;
+    const pupil = new THREE.Mesh(new THREE.CircleGeometry(0.016,12), mat(0x111,false,0.2));
+    pupil.position.z = 0.052;
+    grp.add(sclera,iris,pupil);
+    grp.position.set(x,2.24,0.23);
+    return grp;
+  }
+  const eyeL = makeEye(-0.1);
+  const eyeR = makeEye(0.1);
+  const browGeo = new THREE.BoxGeometry(0.11,0.025,0.02);
+  const browL = new THREE.Mesh(browGeo, mat(0x2a1a0a,false,0.6));
+  browL.position.set(-0.1,2.33,0.22); browL.rotation.z = 0.15;
+  const browR = browL.clone(); browR.position.x=0.1; browR.rotation.z=-0.15;
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.025,0.09,8), skin);
+  nose.rotation.x = Math.PI/2; nose.position.set(0,2.18,0.27);
+  const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.015,0.01), mat(0xc07060,false,0.6));
+  mouth.position.set(0,2.1,0.26);
+  const earL = new THREE.Mesh(new THREE.SphereGeometry(0.05,12,12), skin);
+  earL.scale.set(0.5,1,0.6); earL.position.set(-0.27,2.22,0);
+  const earR = earL.clone(); earR.position.x=0.27;
+
+  // hair
+  const hairGroup = new THREE.Group();
+  const hairSpikes = [
+    {pos:[0,2.58,0.05], rot:[-0.2,0,0], s:[0.18,0.45,0.18]},
+    {pos:[-0.12,2.55,0.08], rot:[-0.3,0,0.3], s:[0.14,0.4,0.14]},
+    {pos:[0.12,2.55,0.08], rot:[-0.3,0,-0.3], s:[0.14,0.4,0.14]},
+    {pos:[-0.22,2.48,0.0], rot:[-0.1,0,0.6], s:[0.12,0.35,0.12]},
+    {pos:[0.22,2.48,0.0], rot:[-0.1,0,-0.6], s:[0.12,0.35,0.12]},
+    {pos:[0,2.5,-0.12], rot:[0.4,0,0], s:[0.16,0.3,0.16]},
+  ];
+  hairSpikes.forEach(hs=>{
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(hs.s[0],hs.s[1],8), hairMat);
+    cone.position.set(...hs.pos); cone.rotation.set(...hs.rot); cone.castShadow=true;
+    hairGroup.add(cone);
+  });
+  const hairBase = new THREE.Mesh(new THREE.SphereGeometry(0.29,16,16,0,Math.PI*2,0,Math.PI/2), hairMat);
+  hairBase.position.set(0,2.32,0); hairBase.scale.set(1,0.6,1);
+  hairGroup.add(hairBase);
+
   // headband
-  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.38,0.1,16), mat(0x333,true,0.3));
-  band.rotation.x = Math.PI/2; band.position.y = 2.48;
-  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.32,0.2,0.06), mat(0xaaa,true,0.2));
-  plate.position.set(0,2.48,0.36);
-  // symbol on plate (small circle)
-  const sym = new THREE.Mesh(new THREE.CircleGeometry(0.06,12), mat(data.accent,true,0.2));
-  sym.position.set(0,2.48,0.395);
-  // eyes
-  const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.045,8,8), mat(0x111));
-  eyeL.position.set(-0.11,2.38,0.32);
-  const eyeR = eyeL.clone(); eyeR.position.x=0.11;
-  // arms
-  const armGeo = new THREE.CapsuleGeometry(0.13,0.65,4,8);
-  const armL = new THREE.Mesh(armGeo, mat(color)); armL.position.set(-0.58,1.42,0); armL.castShadow=true;
-  const armR = new THREE.Mesh(armGeo, mat(color)); armR.position.set(0.58,1.42,0); armR.castShadow=true;
-  // hands
-  const handL = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,8), skin); handL.position.set(-0.58,1.05,0);
-  const handR = new THREE.Mesh(new THREE.SphereGeometry(0.12,8,8), skin); handR.position.set(0.58,1.05,0);
-  // legs
-  const legGeo = new THREE.CapsuleGeometry(0.17,0.8,4,8);
-  const legL = new THREE.Mesh(legGeo, mat(0x222)); legL.position.set(-0.2,0.5,0); legL.castShadow=true;
-  const legR = new THREE.Mesh(legGeo, mat(0x222)); legR.position.set(0.2,0.5,0); legR.castShadow=true;
-  // boots
-  const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.18,0.32), mat(0x111));
-  bootL.position.set(-0.2,0.08,0.05);
-  const bootR = bootL.clone(); bootR.position.x=0.2;
+  const band = new THREE.Mesh(new THREE.CylinderGeometry(0.28,0.28,0.07,24), mat(0x1a1a1a,false,0.4,0.3));
+  band.rotation.x = Math.PI/2; band.position.set(0,2.36,0.12);
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(0.26,0.16,0.04), metalMat);
+  plate.position.set(0,2.36,0.37);
+  const sym = new THREE.Mesh(new THREE.CircleGeometry(0.05,16), mat(data.accent,true,0.2,0.4));
+  sym.position.set(0,2.36,0.395);
+
+  // arms (segmented)
+  function makeArm(side){
+    const grp = new THREE.Group();
+    const sx = side>0?1:-1;
+    const shoulder = new THREE.Mesh(new THREE.SphereGeometry(0.13,12,12), cloth);
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.1,0.32,6,10), cloth);
+    upper.position.set(0,-0.22,0); upper.castShadow=true;
+    const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.09,10,10), cloth);
+    elbow.position.set(0,-0.42,0);
+    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.085,0.28,6,10), skin);
+    fore.position.set(0,-0.62,0); fore.castShadow=true;
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.12,0.06), skin);
+    hand.position.set(0,-0.8,0);
+    for(let f=0;f<4;f++){
+      const finger = new THREE.Mesh(new THREE.CylinderGeometry(0.012,0.012,0.07,6), skin);
+      finger.position.set(-0.03+f*0.02,-0.87,0.02);
+      grp.add(finger);
+    }
+    grp.add(shoulder,upper,elbow,fore,hand);
+    grp.position.set(sx*0.38,1.72,0);
+    return grp;
+  }
+  const armL = makeArm(-1);
+  const armR = makeArm(1);
+
+  // legs (segmented)
+  function makeLeg(side){
+    const grp = new THREE.Group();
+    const sx = side>0?1:-1;
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.13,0.38,6,10), cloth2);
+    thigh.position.set(0,-0.22,0); thigh.castShadow=true;
+    const knee = new THREE.Mesh(new THREE.SphereGeometry(0.11,10,10), cloth2);
+    knee.position.set(0,-0.46,0);
+    const calf = new THREE.Mesh(new THREE.CapsuleGeometry(0.11,0.34,6,10), skin);
+    calf.position.set(0,-0.68,0); calf.castShadow=true;
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.13,0.1,0.26), bootMat);
+    foot.position.set(0,-0.92,0.06);
+    const sole = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.03,0.28), mat(0x0a0a0a,false,0.8));
+    sole.position.set(0,-0.98,0.06);
+    grp.add(thigh,knee,calf,foot,sole);
+    grp.position.set(sx*0.16,0.95,0);
+    return grp;
+  }
+  const legL = makeLeg(-1);
+  const legR = makeLeg(1);
+
   // weapon
   let weapon = null;
   if(data.weapon==='sword'){
-    weapon = new THREE.Mesh(new THREE.BoxGeometry(0.06,0.9,0.02), mat(0xaaa,true,0.2));
-    weapon.position.set(0.72,1.3,0); weapon.rotation.z=-0.3;
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.04,0.95,0.015), metalMat);
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.18,0.05,0.05), mat(0x3a2a1a,false,0.6));
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,0.22,8), mat(0x3a2a1a,false,0.6));
+    handle.position.y=-0.58;
+    weapon = new THREE.Group(); weapon.add(blade,guard,handle);
+    weapon.position.set(0.55,1.2,0.15); weapon.rotation.z=-0.25;
   } else if(data.weapon==='kunai'){
-    weapon = new THREE.Mesh(new THREE.ConeGeometry(0.04,0.35,6), mat(0xaaa,true,0.2));
-    weapon.rotation.x=Math.PI/2; weapon.position.set(0.72,1.15,0.1);
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.03,0.28,6), metalMat);
+    blade.rotation.x=Math.PI/2;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.04,0.008,6,12), metalMat);
+    ring.position.z=0.18;
+    weapon = new THREE.Group(); weapon.add(blade,ring);
+    weapon.position.set(0.5,1.1,0.15);
   } else if(data.weapon==='rod'){
-    weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,1.2,6), mat(0x444,true,0.3));
-    weapon.position.set(0.72,1.3,0); weapon.rotation.z=-0.2;
+    weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.025,0.025,1.1,8), metalMat);
+    weapon.position.set(0.5,1.25,0.1); weapon.rotation.z=-0.2;
   } else if(data.weapon==='gunbai'){
-    weapon = new THREE.Mesh(new THREE.CircleGeometry(0.45,16), mat(0x8b4513,false,0.6));
-    weapon.position.set(0.72,1.3,0); weapon.rotation.y=Math.PI/2;
+    const fan = new THREE.Mesh(new THREE.CircleGeometry(0.42,24), mat(0x8b4513,false,0.6));
+    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.9,8), mat(0x3a2a1a,false,0.6));
+    handle.position.y=-0.65;
+    weapon = new THREE.Group(); weapon.add(fan,handle);
+    weapon.position.set(0.55,1.3,0.1); weapon.rotation.y=Math.PI/2;
   } else if(data.weapon==='wood'){
-    weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.06,0.06,1.0,6), mat(0x5a3825,false,0.7));
-    weapon.position.set(0.72,1.3,0); weapon.rotation.z=-0.2;
+    weapon = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.9,8), mat(0x5a3825,false,0.7));
+    weapon.position.set(0.5,1.2,0.1); weapon.rotation.z=-0.2;
   } else if(data.weapon==='gourd'){
-    weapon = new THREE.Mesh(new THREE.SphereGeometry(0.35,12,12), mat(0xc2b280,false,0.5));
-    weapon.position.set(-0.72,1.0,0);
+    const gourd = new THREE.Mesh(new THREE.SphereGeometry(0.3,12,12), mat(0xc2b280,false,0.5));
+    gourd.scale.set(0.8,1.2,0.8);
+    const strap = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.6,6), mat(0x3a2a1a,false,0.6));
+    strap.position.set(0,0.5,0);
+    weapon = new THREE.Group(); weapon.add(gourd,strap);
+    weapon.position.set(-0.55,1.0,0);
+  } else if(data.weapon==='fist'){
+    const wrapL = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.06,0.08), mat(0xdddddd,false,0.7));
+    wrapL.position.set(-0.38,0.95,0.05);
+    const wrapR = wrapL.clone(); wrapR.position.x=0.38;
+    weapon = new THREE.Group(); weapon.add(wrapL,wrapR);
   }
-  // aura sphere
-  const aura = new THREE.Mesh(new THREE.SphereGeometry(1.0,16,16), new THREE.MeshBasicMaterial({color:data.accent,transparent:true,opacity:0.0}));
+
+  // kunai pouch
+  const pouch = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.16,0.06), mat(0x2a2a2a,false,0.6));
+  pouch.position.set(-0.32,0.75,0.08);
+  const kunaiHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.015,0.015,0.12,6), metalMat);
+  kunaiHandle.position.set(-0.32,0.85,0.08);
+
+  // aura
+  const aura = new THREE.Mesh(new THREE.SphereGeometry(1.05,20,20), new THREE.MeshBasicMaterial({color:data.accent,transparent:true,opacity:0.0}));
   aura.position.y=1.4;
-  const parts = {torso,head,hair,band,plate,sym,eyeL,eyeR,armL,armR,handL,handR,legL,legR,bootL,bootR,aura,weapon,chest};
-  for(const k in parts){ if(parts[k]) g.add(parts[k]); }
+
+  const parts = {torso:torsoUpper, head, hair:hairGroup, band, plate, sym, eyeL, eyeR, armL, armR, legL, legR, aura, weapon, chest:jacket, neck, pelvis, torsoLower, browL, browR, nose, mouth, earL, earR};
+  const all = [pelvis,torsoLower,torsoUpper,jacket,collar,belt,buckle,neck,head,eyeL,eyeR,browL,browR,nose,mouth,earL,earR,hairBase,band,plate,sym,armL,armR,legL,legR,aura,pouch,kunaiHandle];
+  all.forEach(m=>{ if(m) g.add(m); });
+  if(weapon) g.add(weapon);
+  g.add(hairGroup);
   g.userData.parts = parts;
   g.userData.baseColor = color;
+  g.userData.hairGroup = hairGroup;
   return g;
 }
 
@@ -835,9 +963,9 @@ class Fighter {
     // reset rotations
     for(const k of ['armL','armR','legL','legR']){ p[k].rotation.set(0,0,0); }
     p.torso.rotation.set(0,0,0); p.head.rotation.set(0,0,0);
-    p.torso.position.y = 1.3 + Math.sin(t*2)*0.025;
-    p.head.position.y = 2.35 + Math.sin(t*2)*0.025;
-    if(p.hair) p.hair.position.y = 2.72 + Math.sin(t*2)*0.025;
+    p.torso.position.y = 1.62 + Math.sin(t*2)*0.025;
+    p.head.position.y = 2.22 + Math.sin(t*2)*0.025;
+    if(p.hair) p.hair.position.y = 2.32 + Math.sin(t*2)*0.025;
     switch(this.state){
       case 'walk':
         p.legL.rotation.x = Math.sin(t*9)*0.55;
@@ -885,8 +1013,8 @@ class Fighter {
         break;
       case 'dead':
         p.torso.rotation.x = Math.PI/2;
-        p.torso.position.y = 0.45;
-        p.head.position.y = 0.9;
+        p.torso.position.y = 0.9;
+        p.head.position.y = 1.3;
         break;
     }
     // aura buff
