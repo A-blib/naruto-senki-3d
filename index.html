@@ -797,10 +797,9 @@ class Fighter {
     if(input.keys['KeyA']) mx-=1;
     if(input.keys['KeyD']) mx+=1;
     if(this.state!=='attack' && this.state!=='skill' && this.state!=='dash' && this.state!=='dead' && this.state!=='hit'){
-      // convert input (x,z in input space) to world space relative to current facing
-      // input mx: left/right, mz: forward/back (W=-1)
-      const fwdX = this.fx, fwdZ = this.fz;
-      const rightX = this.fz, rightZ = -this.fx;
+      // convert input to world space relative to CAMERA (free direction)
+      const fwdX = Math.sin(camYaw), fwdZ = Math.cos(camYaw);
+      const rightX = Math.cos(camYaw), rightZ = -Math.sin(camYaw);
       let wx = rightX*mx + fwdX*(-mz);
       let wz = rightZ*mx + fwdZ*(-mz);
       const moving = (mx!==0||mz!==0);
@@ -1304,14 +1303,18 @@ function updateHitPause(dt){
 // ============================================================
 let camShake=0;
 function cameraShake(v){ camShake = Math.max(camShake,v); }
-let camYaw=0, camPitch=0.3;
+let camYaw=0, camPitch=0.35, camDist=10;
 function updateCamera(dt, player, paused){
   if(paused) return;
-  const target = player.pos.clone().add(new THREE.Vector3(0,2,0));
-  const behind = new THREE.Vector3(-player.fx*(7+camPitch*2), 4.5+camPitch*3, 6);
-  // apply yaw offset slightly
-  const desired = target.clone().add(behind);
-  camera.position.lerp(desired, dt*5);
+  const target = player.pos.clone().add(new THREE.Vector3(0,1.6,0));
+  const cp = Math.cos(camPitch), sp = Math.sin(camPitch);
+  const cy = Math.cos(camYaw), sy = Math.sin(camYaw);
+  const desired = new THREE.Vector3(
+    target.x - sy*cp*camDist,
+    target.y + sp*camDist + 1.2,
+    target.z - cy*cp*camDist
+  );
+  camera.position.lerp(desired, dt*6);
   if(camShake>0){
     camera.position.x += (Math.random()-0.5)*camShake;
     camera.position.y += (Math.random()-0.5)*camShake;
@@ -1417,6 +1420,16 @@ canvas.addEventListener('mousedown', (e)=>{
 });
 canvas.addEventListener('mouseup', (e)=>{ if(e.button===2) input.mouseRight=false; });
 canvas.addEventListener('contextmenu', e=>e.preventDefault());
+// pointer lock for free camera look
+canvas.addEventListener('click', ()=>{ if(G.running && !G.paused){ try{ canvas.requestPointerLock(); }catch(e){} } });
+document.addEventListener('pointerlockchange', ()=>{ pointerLocked = document.pointerLockElement===canvas; });
+let pointerLocked=false;
+document.addEventListener('mousemove', (e)=>{
+  if(!pointerLocked) return;
+  camYaw -= e.movementX*0.005;
+  camPitch += e.movementY*0.005;
+  camPitch = clamp(camPitch, -0.2, 1.0);
+});
 
 // touch
 const joy = document.getElementById('touchJoy');
@@ -1496,6 +1509,8 @@ function startGame(mode){
   enemy = new Fighter(G.enemyChar,false,6);
   if(mode==='boss'){ enemy.maxHp*=2.2; enemy.hp=enemy.maxHp; enemy.data.speed*=0.85; }
   updateHUD();
+  camYaw = player.facingAngle;
+  camPitch = 0.35;
   camera.position.set(0,6,12);
   playMusic();
 }
