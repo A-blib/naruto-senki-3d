@@ -716,9 +716,9 @@ class Fighter {
     this.vel = new THREE.Vector3();
     this.state = 'idle'; this.stateT = 0;
     this.combo = 0; this.comboT = 0;
-    this.facingAngle = isPlayer?0:Math.PI;
     this.fx = isPlayer?1:-1;
     this.fz = 0;
+    this.facingAngle = Math.atan2(this.fx, this.fz);
     this.facing = this.fx>=0?1:-1;
     this.skillsCd = [0,0,0,0];
     this.invuln = 0; this.blocking = false;
@@ -743,7 +743,7 @@ class Fighter {
     this.hp=this.maxHp; this.chakra=this.maxChakra; this.ult=0;
     this.pos.set(x,0,0); this.vel.set(0,0,0);
     this.state='idle'; this.stateT=0; this.combo=0; this.comboT=0;
-    this.facingAngle = x<0?0:Math.PI; this.fx = x<0?1:-1; this.fz=0; this.facing=this.fx>=0?1:-1; this.skillsCd=[0,0,0,0]; this.invuln=0; this.blocking=false;
+    this.fx = x<0?1:-1; this.fz=0; this.facingAngle = Math.atan2(this.fx, this.fz); this.facing=this.fx>=0?1:-1; this.skillsCd=[0,0,0,0]; this.invuln=0; this.blocking=false;
     this.airborne=false; this.grounded=true; this.dead=false; this.buffT=0; this.buff=null;
     this.hitStun=0; this.specialCd={headroom:0,caveman:0,ponytail:0};
     this.dodgeCd=0; this.counterReady=false; this.counterT=0;
@@ -790,24 +790,31 @@ class Fighter {
   }
   handleInput(dt,input,target){
     const speed = this.speed;
+    // Camera/character-relative free movement: W=forward S=backward A=left D=right
     let mx=0,mz=0;
     if(input.keys['KeyW']) mz-=1;
     if(input.keys['KeyS']) mz+=1;
     if(input.keys['KeyA']) mx-=1;
     if(input.keys['KeyD']) mx+=1;
     if(this.state!=='attack' && this.state!=='skill' && this.state!=='dash' && this.state!=='dead' && this.state!=='hit'){
-      const moving = mx!==0||mz!==0;
+      // convert input (x,z in input space) to world space relative to current facing
+      // input mx: left/right, mz: forward/back (W=-1)
+      const fwdX = this.fx, fwdZ = this.fz;
+      const rightX = this.fz, rightZ = -this.fx;
+      let wx = rightX*mx + fwdX*(-mz);
+      let wz = rightZ*mx + fwdZ*(-mz);
+      const moving = (mx!==0||mz!==0);
       if(moving){
-        const len = Math.hypot(mx,mz); mx/=len; mz/=len;
-        this.vel.x = mx*speed;
-        this.vel.z = mz*speed;
+        const len = Math.hypot(wx,wz)||1; wx/=len; wz/=len;
+        // smooth acceleration
+        const targetVx = wx*speed;
+        const targetVz = wz*speed;
+        this.vel.x += (targetVx-this.vel.x)*0.35;
+        this.vel.z += (targetVz-this.vel.z)*0.35;
         this.state = (input.keys['ShiftLeft']||input.keys['ShiftRight'])?'run':'walk';
-        if(mx!==0 || mz!==0){
-          const _len = Math.hypot(mx,mz)||1;
-          this.fx = mx/_len; this.fz = mz/_len;
-          this.facingAngle = Math.atan2(this.fx, this.fz);
-          this.facing = this.fx>=0?1:-1;
-        }
+        this.fx = wx; this.fz = wz;
+        this.facingAngle = Math.atan2(this.fx, this.fz);
+        this.facing = this.fx>=0?1:-1;
       } else {
         this.vel.x*=0.82; this.vel.z*=0.82;
         if(Math.abs(this.vel.x)<0.02) this.vel.x=0;
@@ -830,7 +837,7 @@ class Fighter {
   }
   applyGravity(dt){ if(!this.grounded) this.vel.y -= 34*dt; }
   clampArena(){
-    const L=38;
+    const L=44;
     this.pos.x = clamp(this.pos.x,-L,L);
     this.pos.z = clamp(this.pos.z,-L,L);
     if(this.pos.y<0){ this.pos.y=0; this.vel.y=0; this.grounded=true; this.airborne=false; }
