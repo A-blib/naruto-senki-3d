@@ -122,6 +122,8 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
     <div class="row"><label>FPS cap: </label><input id="fpsCap" type="range" min="30" max="120" step="10" value="60"></div>
     <div class="row"><label>Sound: </label><input id="sndToggle" type="checkbox" checked></div>
     <div class="row"><label>Music: </label><input id="musToggle" type="checkbox" checked></div>
+    <div class="row"><label>Difficulty: </label>
+      <select id="diffSel"><option>Easy</option><option selected>Normal</option><option>Hard</option></select></div>
     <div class="title" style="font-size:16px;margin-top:10px">Special Skills Config</div>
     <div id="specialEditor"></div>
     <div class="row" style="margin-top:10px;justify-content:flex-end">
@@ -150,16 +152,19 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
       <div class="bar hp"><div class="fill" id="pHp" style="width:100%"></div><div class="txt" id="pHpT">100%</div></div>
       <div class="bar ch"><div class="fill" id="pCh" style="width:100%"></div><div class="txt" id="pChT">100%</div></div>
       <div class="bar ult"><div class="fill" id="pUlt" style="width:0%"></div><div class="txt" id="pUltT">0%</div></div>
+      <div class="bar" style="height:8px"><div class="fill" id="pSt" style="width:100%;background:linear-gradient(90deg,#2ecc71,#27ae60)"></div></div>
     </div>
     <div class="barbox right">
       <div class="barname"><span id="eName">Enemy</span><span class="badge" id="eBuff"></span></div>
       <div class="bar hp"><div class="fill" id="eHp" style="width:100%"></div><div class="txt" id="eHpT">100%</div></div>
       <div class="bar ch"><div class="fill" id="eCh" style="width:100%"></div><div class="txt" id="eChT">100%</div></div>
       <div class="bar ult"><div class="fill" id="eUlt" style="width:0%"></div><div class="txt" id="eUltT">0%</div></div>
+      <div class="bar" style="height:8px"><div class="fill" id="eSt" style="width:100%;background:linear-gradient(90deg,#2ecc71,#27ae60)"></div></div>
     </div>
     <div class="skillrow" id="skillRow"></div>
-    <div class="controls-hint">WASD gerak • Mouse kamera • LMB attack • RMB block • Space jump • Shift dash • Q/E/R skill • F ultimate • G/H/J special • C counter • Esc pause</div>
+    <div class="controls-hint">WASD gerak • Mouse kamera (klik lock) • LMB attack • RMB block • Space jump (air recovery) • Shift dash • Q/E/R skill • F ultimate • G/H/J special • C counter • T taunt • Esc pause</div>
     <div class="combo-display" id="comboDisplay"></div>
+    <canvas id="minimap" width="120" height="120" style="position:absolute;bottom:16px;right:16px;border-radius:50%;border:2px solid rgba(255,200,80,.5);background:rgba(0,0,0,.6);pointer-events:none"></canvas>
   </div>
 
   <div id="victory" class="panel hidden">
@@ -168,6 +173,9 @@ canvas{display:block;width:100%;height:100%;touch-action:none}
     <div id="vicStats" class="sub"></div>
     <button class="btn" data-act="restart">Lagi</button>
     <button class="btn ghost" data-act="backMenu">Menu</button>
+  </div>
+  <div id="roundOverlay" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:25;pointer-events:none">
+    <div style="font-size:72px;font-weight:900;color:#ffd27f;text-shadow:0 0 30px #ff9a3c;animation:comboPulse .5s ease">K.O.</div>
   </div>
   <div id="defeat" class="panel hidden">
     <div class="title">DEFEAT</div>
@@ -375,6 +383,7 @@ const G = {
   mode:'menu',running:false,paused:false,
   playerChar:CHARS[0],enemyChar:CHARS[1],arena:ARENAS[0],
   wave:0,wins:0,score:0,highScore:parseInt(localStorage.getItem('n3d_hs')||'0'),
+  round:1,playerWins:0,enemyWins:0,roundState:'idle',difficulty:'Normal',maxRounds:3,roundTimer:0,
   selectedCharIdx:0,selectedArenaIdx:0,
   settings:{quality:'Medium',resScale:1,fpsCap:60,sound:true,music:true},
   lastTime:0,combo:0,comboTimer:0,maxCombo:0,
@@ -711,6 +720,7 @@ class Fighter {
     this.data = data; this.isPlayer = isPlayer;
     this.hp = data.hp; this.maxHp = data.hp;
     this.chakra = data.chakra; this.maxChakra = data.chakra;
+    this.stamina = 100; this.maxStamina = 100;
     this.ult = 0;
     this.pos = new THREE.Vector3(spawnX,0,0);
     this.vel = new THREE.Vector3();
@@ -740,7 +750,7 @@ class Fighter {
   get speed(){ return this.data.speed * (this.buff==='speed'?1.6:1) * (this.buff==='damage'?1.1:1); }
   get alive(){ return this.hp>0; }
   reset(x){
-    this.hp=this.maxHp; this.chakra=this.maxChakra; this.ult=0;
+    this.hp=this.maxHp; this.chakra=this.maxChakra; this.stamina=this.maxStamina; this.ult=0;
     this.pos.set(x,0,0); this.vel.set(0,0,0);
     this.state='idle'; this.stateT=0; this.combo=0; this.comboT=0;
     this.fx = x<0?1:-1; this.fz=0; this.facingAngle = Math.atan2(this.fx, this.fz); this.facing=this.fx>=0?1:-1; this.skillsCd=[0,0,0,0]; this.invuln=0; this.blocking=false;
@@ -765,6 +775,9 @@ class Fighter {
     this.counterT=Math.max(0,this.counterT-dt);
     if(this.counterT<=0) this.counterReady=false;
     this.chakra = Math.min(this.maxChakra, this.chakra + dt*5);
+    // stamina regen
+    if(!this.blocking && this.state!=='dash') this.stamina = Math.min(this.maxStamina, this.stamina + dt*25);
+    else this.stamina = Math.max(0, this.stamina - dt*15);
     this.ult = Math.min(100, this.ult + dt*2.5);
 
     if(this.hitStun>0){
@@ -826,10 +839,16 @@ class Fighter {
     if(input.jumpPressed && this.grounded){
       this.vel.y = 7.0; this.grounded=false; this.airborne=true; this.state='jump'; this.stateT=0.2;
       input.jumpPressed=false; SFX.jump();
+    } else if(input.jumpPressed && this.airborne && this.hitStun>0){
+      // air recovery
+      this.vel.y = 4; this.hitStun=0; this.state='jump'; this.stateT=0.2;
+      this.invuln=0.2;
+      input.jumpPressed=false; SFX.jump();
     }
     if(input.dashPressed){ this.doDash(target); input.dashPressed=false; }
     if(input.attackPressed){ this.doAttack(target); input.attackPressed=false; }
     if(input.counterPressed){ this.doCounter(target); input.counterPressed=false; }
+    if(input.tauntPressed){ this.doTaunt(); input.tauntPressed=false; }
     if(input.skillPressed>=0){ this.doSkill(input.skillPressed,target); input.skillPressed=-1; }
     if(input.ultPressed){ this.doUltimate(target); input.ultPressed=false; }
     if(input.specialPressed){ this.doSpecial(input.specialKey,target); input.specialPressed=false; }
@@ -844,6 +863,8 @@ class Fighter {
   doDash(target){
     if(this.state==='dead'||this.state==='hit') return;
     if(this.dodgeCd>0) return;
+    if(this.stamina < 20) return;
+    this.stamina -= 20;
     this.vel.x = this.fx*16; this.vel.z = this.fz*16; this.invuln=0.3;
     this.dodgeCd=0.6;
     this.state='dash'; this.stateT=0.22;
@@ -898,6 +919,13 @@ class Fighter {
     SFX.heavy();
     cameraShake(0.4);
   }
+  doTaunt(){
+    if(this.state==='dead') return;
+    this.state='skill'; this.stateT=0.6;
+    this.ult = Math.min(100, this.ult+8);
+    spawnEffect('buff', this.pos.clone(), 0, this.data.accent);
+    SFX.pickup();
+  }
   doSkill(idx,target){
     if(idx<0||idx>3) return;
     if(this.skillsCd[idx]>0) return;
@@ -941,6 +969,10 @@ class Fighter {
     if(this.buff==='shield') final *= 0.5;
     // buff damage reduction
     if(this.buff==='damage') final *= 0.9;
+    // critical hit
+    const critChance = attacker && attacker.buff==='damage' ? 0.22 : 0.12;
+    const isCrit = Math.random() < critChance;
+    if(isCrit){ final *= 1.6; }
     this.hp -= final;
     this.hitStun = this.blocking?0.05:0.22;
     const kb = type==='heavy'?7:4;
@@ -955,7 +987,7 @@ class Fighter {
     }
     this.grounded=false;
     spawnEffect('hit', this.pos.clone().add(new THREE.Vector3(0,1.3,0)),0,0xff4444);
-    spawnDamageNumber(this.pos.clone().add(new THREE.Vector3(0,2.2,0)), Math.round(final), type==='heavy');
+    spawnDamageNumber(this.pos.clone().add(new THREE.Vector3(0,2.2,0)), Math.round(final), type==='heavy'||isCrit);
     if(this.hp<=0){ this.hp=0; this.die(); }
     // attacker ult charge
     if(attacker) attacker.ult = Math.min(100, attacker.ult + final*0.06);
@@ -1328,6 +1360,7 @@ function updateCamera(dt, player, paused){
 // ============================================================
 function aiUpdate(enemy, player, dt){
   if(enemy.dead||player.dead) return;
+  const diffMult = G.difficulty==='Easy'?0.4:(G.difficulty==='Hard'?1.6:1.0);
   const dx = player.pos.x - enemy.pos.x;
   const dz = player.pos.z - enemy.pos.z;
   const d = Math.hypot(dx,dz);
@@ -1352,7 +1385,7 @@ function aiUpdate(enemy, player, dt){
   // jump to chase
   if(!enemy.airborne && Math.random()<0.003 && d>5){ enemy.vel.y=6.5; enemy.airborne=true; enemy.grounded=false; enemy.state='jump'; }
   // attack when in range
-  if(d < 2.9 && enemy.attackCd<=0 && Math.random()<0.05){
+  if(d < 2.9 && enemy.attackCd<=0 && Math.random()<0.05*diffMult){
     enemy.doAttack(player);
   }
   // skills (smarter: use if player far for ranged, close for melee)
@@ -1360,16 +1393,16 @@ function aiUpdate(enemy, player, dt){
     if(enemy.skillsCd[i]<=0 && enemy.chakra >= enemy.data.skills[i].cc){
       const s = enemy.data.skills[i];
       let use=false;
-      if(s.type==='projectile' && d>3 && d<s.range) use = Math.random()<0.015;
-      else if(s.type==='melee' && d<3) use = Math.random()<0.018;
-      else if(s.type==='dash' && d>2 && d<6) use = Math.random()<0.016;
-      else if(s.type==='aoe' && d<5) use = Math.random()<0.014;
-      else if(s.type==='buff') use = Math.random()<0.008 && enemy.hp<enemy.maxHp*0.7;
+      if(s.type==='projectile' && d>3 && d<s.range) use = Math.random()<0.015*diffMult;
+      else if(s.type==='melee' && d<3) use = Math.random()<0.018*diffMult;
+      else if(s.type==='dash' && d>2 && d<6) use = Math.random()<0.016*diffMult;
+      else if(s.type==='aoe' && d<5) use = Math.random()<0.014*diffMult;
+      else if(s.type==='buff') use = Math.random()<0.008*diffMult && enemy.hp<enemy.maxHp*0.7;
       if(use){ enemy.doSkill(i,player); break; }
     }
   }
   // ultimate
-  if(enemy.ult>=100 && d<7 && Math.random()<0.025){
+  if(enemy.ult>=100 && d<7 && Math.random()<0.025*diffMult){
     enemy.doUltimate(player);
   }
   // block
@@ -1395,7 +1428,7 @@ function aiUpdate(enemy, player, dt){
 // ============================================================
 // INPUT
 // ============================================================
-const input = {keys:{}, mouseLeft:false, mouseRight:false, jumpPressed:false, dashPressed:false, attackPressed:false, counterPressed:false, skillPressed:-1, ultPressed:false, specialPressed:false, specialKey:null, lock:false};
+const input = {keys:{}, mouseLeft:false, mouseRight:false, jumpPressed:false, dashPressed:false, attackPressed:false, counterPressed:false, skillPressed:-1, ultPressed:false, specialPressed:false, specialKey:null, tauntPressed:false, lock:false};
 window.addEventListener('keydown', (e)=>{
   if(e.code==='Escape'){ if(G.running){ togglePause(); } return; }
   if(!input.keys[e.code]){
@@ -1406,6 +1439,7 @@ window.addEventListener('keydown', (e)=>{
     if(e.code==='KeyR') input.skillPressed=2;
     if(e.code==='KeyF') input.ultPressed=true;
     if(e.code==='KeyC') input.counterPressed=true;
+    if(e.code==='KeyT') input.tauntPressed=true;
     if(e.code==='KeyG'){ input.specialPressed=true; input.specialKey='headroom'; }
     if(e.code==='KeyH'){ input.specialPressed=true; input.specialKey='caveman'; }
     if(e.code==='KeyJ'){ input.specialPressed=true; input.specialKey='ponytail'; }
@@ -1473,11 +1507,13 @@ document.querySelectorAll('.tbtn').forEach(b=>{
 let player=null, enemy=null;
 let gameMode='quick';
 let hitFreeze=0;
+let targetRing=null;
 
 function startGame(mode){
   gameMode = mode||'quick';
   G.mode='playing'; G.running=true; G.paused=false;
   G.combo=0; G.maxCombo=0;
+  G.round=1; G.playerWins=0; G.enemyWins=0;
   hideAllPanels();
   document.getElementById('hud').classList.remove('hidden');
   document.getElementById('loading').classList.add('hidden');
@@ -1508,7 +1544,12 @@ function startGame(mode){
   }
   enemy = new Fighter(G.enemyChar,false,6);
   if(mode==='boss'){ enemy.maxHp*=2.2; enemy.hp=enemy.maxHp; enemy.data.speed*=0.85; }
+  if(targetRing){ scene.remove(targetRing); targetRing=null; }
+  targetRing = new THREE.Mesh(new THREE.RingGeometry(1.2,1.4,32), new THREE.MeshBasicMaterial({color:0xffff00,transparent:true,opacity:0.5,side:THREE.DoubleSide}));
+  targetRing.rotation.x=-Math.PI/2;
+  scene.add(targetRing);
   updateHUD();
+  showRoundIntro();
   camYaw = player.facingAngle;
   camPitch = 0.35;
   camera.position.set(0,6,12);
@@ -1561,6 +1602,40 @@ function endGame(win){
   }
 }
 
+function endRound(win){
+  if(!G.running) return;
+  G.running = false;
+  const overlay = document.getElementById('roundOverlay');
+  overlay.style.display='flex';
+  if(win){ G.playerWins++; } else { G.enemyWins++; }
+  setTimeout(()=>{
+    overlay.style.display='none';
+    if(G.playerWins>=2 || G.enemyWins>=2 || G.round>=G.maxRounds){
+      // match over
+      G.running=true;
+      endGame(G.playerWins>G.enemyWins);
+    } else {
+      // next round
+      G.round++;
+      // reset fighters
+      if(player) player.reset(-6);
+      if(enemy) enemy.reset(6);
+      // heal partially
+      if(player){ player.hp = Math.min(player.maxHp, player.hp + 200); player.chakra = player.maxChakra; }
+      if(enemy){ enemy.hp = Math.min(enemy.maxHp, enemy.hp + 200); enemy.chakra = enemy.maxChakra; }
+      G.running = true;
+      // show round intro
+      showRoundIntro();
+    }
+  }, 2200);
+}
+function showRoundIntro(){
+  const overlay = document.getElementById('roundOverlay');
+  overlay.innerHTML = '<div style="font-size:48px;font-weight:900;color:#ffd27f;text-shadow:0 0 20px #ff9a3c">ROUND '+G.round+'</div>';
+  overlay.style.display='flex';
+  setTimeout(()=>{ overlay.innerHTML = '<div style="font-size:64px;font-weight:900;color:#fff;text-shadow:0 0 20px #ff9a3c">FIGHT!</div>'; }, 800);
+  setTimeout(()=>{ overlay.style.display='none'; overlay.innerHTML='<div style="font-size:72px;font-weight:900;color:#ffd27f;text-shadow:0 0 30px #ff9a3c;animation:comboPulse .5s ease">K.O.</div>'; }, 1600);
+}
 function togglePause(){
   G.paused = !G.paused;
   document.getElementById('pauseMenu').classList.toggle('hidden', !G.paused);
@@ -1619,6 +1694,7 @@ function updateHUD(){
   document.getElementById('pHpT').textContent = Math.round(pHpPct)+'%';
   document.getElementById('pChT').textContent = Math.round(pChPct)+'%';
   document.getElementById('pUltT').textContent = Math.round(player.ult)+'%';
+  document.getElementById('pSt').style.width = (player.stamina/player.maxStamina*100)+'%';
   const eHpPct = enemy.hp/enemy.maxHp*100;
   const eChPct = enemy.chakra/enemy.maxChakra*100;
   document.getElementById('eHp').style.width = eHpPct+'%';
@@ -1627,6 +1703,7 @@ function updateHUD(){
   document.getElementById('eHpT').textContent = Math.round(eHpPct)+'%';
   document.getElementById('eChT').textContent = Math.round(eChPct)+'%';
   document.getElementById('eUltT').textContent = Math.round(enemy.ult)+'%';
+  document.getElementById('eSt').style.width = (enemy.stamina/enemy.maxStamina*100)+'%';
   document.getElementById('pBuff').textContent = player.buff?player.buff.toUpperCase():'';
   document.getElementById('eBuff').textContent = enemy.buff?enemy.buff.toUpperCase():'';
   // skill row build once
@@ -1750,10 +1827,30 @@ document.getElementById('resScale').addEventListener('change',e=>{G.settings.res
 document.getElementById('fpsCap').addEventListener('change',e=>{G.settings.fpsCap=parseInt(e.target.value);saveSettings();});
 document.getElementById('sndToggle').addEventListener('change',e=>{G.settings.sound=e.target.checked;saveSettings();});
 document.getElementById('musToggle').addEventListener('change',e=>{G.settings.music=e.target.checked;saveSettings(); if(!e.target.checked) stopMusic(); else if(G.running) playMusic();});
+document.getElementById('diffSel').addEventListener('change',e=>{G.difficulty=e.target.value;});
 
 // ============================================================
 // MAIN LOOP
 // ============================================================
+function updateMinimap(){
+  const c = document.getElementById('minimap');
+  if(!c) return;
+  const ctx = c.getContext('2d');
+  const w=c.width,h=c.height;
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fillRect(0,0,w,h);
+  const scale = w/90;
+  function toMap(x,z){ return {x:(x+45)*scale, y:(z+45)*scale}; }
+  ctx.strokeStyle='rgba(255,200,80,0.3)'; ctx.beginPath(); ctx.arc(w/2,h/2,w/2-2,0,Math.PI*2); ctx.stroke();
+  if(player){
+    const p=toMap(player.pos.x,player.pos.z);
+    ctx.fillStyle='#3498db'; ctx.beginPath(); ctx.arc(p.x,p.y,4,0,Math.PI*2); ctx.fill();
+  }
+  if(enemy && enemy.alive){
+    const e=toMap(enemy.pos.x,enemy.pos.z);
+    ctx.fillStyle='#e74c3c'; ctx.beginPath(); ctx.arc(e.x,e.y,4,0,Math.PI*2); ctx.fill();
+  }
+}
 let lastFrameTime=0;
 function loop(now){
   requestAnimationFrame(loop);
@@ -1789,14 +1886,20 @@ function loop(now){
       // boss scaling
       if(gameMode==='boss' && enemy.dead===false){}
       // win/lose
-      if(gameMode!=='survival' && enemy.dead && !enemy._endTriggered){ enemy._endTriggered=true; setTimeout(()=>{ if(G.running) endGame(true); }, 900); }
-      if(player.dead && !player._endTriggered){ player._endTriggered=true; setTimeout(()=>{ if(G.running) endGame(false); }, 900); }
+      if(gameMode!=='survival' && enemy.dead && !enemy._endTriggered){ enemy._endTriggered=true; setTimeout(()=>{ if(G.running) endRound(true); }, 900); }
+      if(player.dead && !player._endTriggered){ player._endTriggered=true; setTimeout(()=>{ if(G.running) endRound(false); }, 900); }
       // combo tracking
       if(player.combo > G.maxCombo) G.maxCombo = player.combo;
       // G.combo for display
       G.combo = player.combo;
     }
+    if(targetRing && enemy && enemy.alive){
+      targetRing.position.set(enemy.pos.x, 0.05, enemy.pos.z);
+      targetRing.rotation.z += dt*2;
+      targetRing.material.opacity = 0.4 + Math.sin(Date.now()*0.005)*0.15;
+    }
     if(player) updateCamera(dt, player, false);
+    updateMinimap();
     updateHUD();
   }
   renderer.render(scene,camera);
