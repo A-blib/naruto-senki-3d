@@ -716,7 +716,10 @@ class Fighter {
     this.vel = new THREE.Vector3();
     this.state = 'idle'; this.stateT = 0;
     this.combo = 0; this.comboT = 0;
-    this.facing = isPlayer?1:-1;
+    this.facingAngle = isPlayer?0:Math.PI;
+    this.fx = isPlayer?1:-1;
+    this.fz = 0;
+    this.facing = this.fx>=0?1:-1;
     this.skillsCd = [0,0,0,0];
     this.invuln = 0; this.blocking = false;
     this.airborne = false; this.grounded = true;
@@ -726,7 +729,7 @@ class Fighter {
     this.dodgeCd = 0;
     this.group = buildCharacter(data, isPlayer?data.color:data.color);
     this.group.position.copy(this.pos);
-    this.group.scale.x = this.facing;
+    this.group.rotation.y = this.facingAngle;
     scene.add(this.group);
     this.parts = this.group.userData.parts;
     this.animT = 0;
@@ -740,11 +743,11 @@ class Fighter {
     this.hp=this.maxHp; this.chakra=this.maxChakra; this.ult=0;
     this.pos.set(x,0,0); this.vel.set(0,0,0);
     this.state='idle'; this.stateT=0; this.combo=0; this.comboT=0;
-    this.facing=x<0?1:-1; this.skillsCd=[0,0,0,0]; this.invuln=0; this.blocking=false;
+    this.facingAngle = x<0?0:Math.PI; this.fx = x<0?1:-1; this.fz=0; this.facing=this.fx>=0?1:-1; this.skillsCd=[0,0,0,0]; this.invuln=0; this.blocking=false;
     this.airborne=false; this.grounded=true; this.dead=false; this.buffT=0; this.buff=null;
     this.hitStun=0; this.specialCd={headroom:0,caveman:0,ponytail:0};
     this.dodgeCd=0; this.counterReady=false; this.counterT=0;
-    this.group.position.copy(this.pos); this.group.scale.x=this.facing; this.group.visible=true;
+    this.group.position.copy(this.pos); this.group.rotation.y=this.facingAngle; this.group.visible=true;
     this._endTriggered=false; this._waved=false;
   }
   update(dt, input, target){
@@ -769,7 +772,7 @@ class Fighter {
       this.applyGravity(dt);
       this.pos.addScaledVector(this.vel,dt);
       this.clampArena();
-      this.group.position.copy(this.pos); this.group.scale.x=this.facing;
+      this.group.position.copy(this.pos); this.group.rotation.y=this.facingAngle;
       this.state='hit'; this.updateAnim(dt); return;
     }
 
@@ -781,7 +784,7 @@ class Fighter {
     this.clampArena();
     if(this.pos.y<=0){ this.pos.y=0; this.vel.y=0; this.grounded=true; this.airborne=false; if(this.state==='jump'||this.state==='fall') this.state='idle'; }
     this.group.position.copy(this.pos);
-    this.group.scale.x=this.facing;
+    this.group.rotation.y=this.facingAngle;
     this.updateAnim(dt);
     if(this.stateT>0){ this.stateT-=dt; if(this.stateT<=0 && this.state!=='hit') this.state='idle'; }
   }
@@ -799,7 +802,12 @@ class Fighter {
         this.vel.x = mx*speed;
         this.vel.z = mz*speed;
         this.state = (input.keys['ShiftLeft']||input.keys['ShiftRight'])?'run':'walk';
-        if(!input.lock) this.facing = mx!==0?(mx>0?1:-1):this.facing;
+        if(mx!==0 || mz!==0){
+          const _len = Math.hypot(mx,mz)||1;
+          this.fx = mx/_len; this.fz = mz/_len;
+          this.facingAngle = Math.atan2(this.fx, this.fz);
+          this.facing = this.fx>=0?1:-1;
+        }
       } else {
         this.vel.x*=0.82; this.vel.z*=0.82;
         if(Math.abs(this.vel.x)<0.02) this.vel.x=0;
@@ -830,8 +838,7 @@ class Fighter {
   doDash(target){
     if(this.state==='dead'||this.state==='hit') return;
     if(this.dodgeCd>0) return;
-    const dir = this.facing;
-    this.vel.x = dir*16; this.vel.z=0; this.invuln=0.3;
+    this.vel.x = this.fx*16; this.vel.z = this.fz*16; this.invuln=0.3;
     this.dodgeCd=0.6;
     this.state='dash'; this.stateT=0.22;
     spawnEffect('dash', this.pos.clone(), dir, this.data.accent);
@@ -849,8 +856,6 @@ class Fighter {
     if(target && target.alive){
       const d = this.pos.distanceTo(target.pos);
       if(d < range+0.6){
-        const dirTo = Math.sign(target.pos.x - this.pos.x);
-        if(dirTo===this.facing || d<1.6){
           if(target.blocking){
             target.takeDamage(dmg*0.2, this, 'melee');
             spawnEffect('block', target.pos.clone().add(new THREE.Vector3(0,1.2,0)), target.facing, 0x88ccff);
@@ -864,7 +869,6 @@ class Fighter {
           }
         }
       }
-    }
     spawnEffect('slash', this.pos.clone(), this.facing, 0xffffff);
     SFX.hit();
     if(this.airborne){
@@ -987,8 +991,8 @@ class Fighter {
       case 'attack':
         const prog = 1 - this.stateT/0.3;
         p.armR.rotation.x = -2.2 + prog*2.5;
-        p.armR.rotation.z = this.facing>0?-0.3:0.3;
-        p.torso.rotation.y = this.facing>0?0.35:-0.35;
+        p.armR.rotation.z = this.fx>=0?-0.3:0.3;
+        p.torso.rotation.y = this.fx>=0?0.35:-0.35;
         if(p.weapon) p.weapon.rotation.x = p.armR.rotation.x;
         break;
       case 'skill':
@@ -1026,7 +1030,7 @@ class Fighter {
     }
     // weapon follow armR roughly
     if(p.weapon && this.state!=='attack'){
-      p.weapon.position.set(this.facing>0?0.72:-0.72,1.3,0);
+      p.weapon.position.set(this.fx>=0?0.72:-0.72,1.3,0);
     }
   }
 }
@@ -1092,8 +1096,7 @@ function executeSkill(fighter,s,target,isUlt=false){
   switch(s.type){
     case 'melee':
       if(t && t.alive && fighter.pos.distanceTo(t.pos) < s.range+1.2){
-        const dirTo = Math.sign(t.pos.x - fighter.pos.x);
-        if(dirTo===fighter.facing || fighter.pos.distanceTo(t.pos)<1.6){
+        if(fighter.pos.distanceTo(t.pos)<1.8){
           applyDamage(fighter,t,s.dmg,'heavy');
           spawnHitPause(0.05);
         }
@@ -1102,8 +1105,7 @@ function executeSkill(fighter,s,target,isUlt=false){
       break;
     case 'dash':
       {
-        const dir = fighter.facing;
-        fighter.vel.x = dir*s.range*1.8; fighter.vel.y=0.4;
+        fighter.vel.x = fighter.fx*s.range*1.8; fighter.vel.z = fighter.fz*s.range*1.8; fighter.vel.y=0.4;
         fighter.invuln=0.35; fighter.state='dash'; fighter.stateT=0.4;
         if(t && t.alive){ const d=fighter.pos.distanceTo(t.pos); if(d < s.range+2){ applyDamage(fighter,t,s.dmg,'heavy'); } }
         spawnEffect('dash', fighter.pos.clone(), dir, fighter.data.accent);
@@ -1149,8 +1151,8 @@ function executeSkill(fighter,s,target,isUlt=false){
 }
 
 function spawnProjectile(fighter,target,s){
-  const mesh = spawnEffect('projectile', fighter.pos.clone().add(new THREE.Vector3(fighter.facing*0.9,1.35,0)), 0, fighter.data.accent);
-  mesh.userData.vel = new THREE.Vector3(fighter.facing*(13+Math.random()*3), 0.4, (Math.random()-0.5)*1.5);
+  const mesh = spawnEffect('projectile', fighter.pos.clone().add(new THREE.Vector3(fighter.fx*0.9,1.35,fighter.fz*0.9)), 0, fighter.data.accent);
+  mesh.userData.vel = new THREE.Vector3(fighter.fx*(13+Math.random()*3), 0.4, fighter.fz*(13+Math.random()*3));
   mesh.userData.target = target;
   mesh.userData.dmg = s.dmg;
   mesh.userData.owner = fighter;
@@ -1178,9 +1180,9 @@ function executeSpecial(fighter,key,target){
 }
 
 function spawnSpecialProj(fighter,target,cfg){
-  const mesh = spawnEffect('projectile', fighter.pos.clone().add(new THREE.Vector3(fighter.facing*0.9,1.35,0)),0,cfg.color);
+  const mesh = spawnEffect('projectile', fighter.pos.clone().add(new THREE.Vector3(fighter.fx*0.9,1.35,fighter.fz*0.9)),0,cfg.color);
   mesh.material.color.setHex(cfg.color);
-  mesh.userData.vel = new THREE.Vector3(fighter.facing*17, (Math.random()-0.5)*3, (Math.random()-0.5)*2);
+  mesh.userData.vel = new THREE.Vector3(fighter.fx*17, (Math.random()-0.5)*3, fighter.fz*17);
   mesh.userData.target = target;
   mesh.userData.dmg = cfg.damage;
   mesh.userData.owner = fighter;
@@ -1299,7 +1301,7 @@ let camYaw=0, camPitch=0.3;
 function updateCamera(dt, player, paused){
   if(paused) return;
   const target = player.pos.clone().add(new THREE.Vector3(0,2,0));
-  const behind = new THREE.Vector3(-player.facing*(7+camPitch*2), 4.5+camPitch*3, 6);
+  const behind = new THREE.Vector3(-player.fx*(7+camPitch*2), 4.5+camPitch*3, 6);
   // apply yaw offset slightly
   const desired = target.clone().add(behind);
   camera.position.lerp(desired, dt*5);
@@ -1319,13 +1321,15 @@ function aiUpdate(enemy, player, dt){
   const dx = player.pos.x - enemy.pos.x;
   const dz = player.pos.z - enemy.pos.z;
   const d = Math.hypot(dx,dz);
-  const dir = dx>0?1:-1;
-  enemy.facing = dir;
+  const dlen = d||1;
+  enemy.fx = dx/dlen; enemy.fz = dz/dlen;
+  enemy.facingAngle = Math.atan2(enemy.fx, enemy.fz);
+  enemy.facing = enemy.fx>=0?1:-1;
   // movement decision
   if(enemy.state!=='skill' && enemy.state!=='attack' && enemy.state!=='dash' && enemy.state!=='hit' && enemy.state!=='dead'){
     if(d > 3.0){
-      enemy.vel.x = dir*enemy.speed*0.85;
-      enemy.vel.z = dz*0.25;
+      enemy.vel.x = enemy.fx*enemy.speed*0.85;
+      enemy.vel.z = enemy.fz*enemy.speed*0.85;
       enemy.state = 'walk';
     } else if(d < 1.5){
       enemy.vel.x = -dir*enemy.speed*0.5;
